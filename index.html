@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<!-- Фиксиран мащаб: спира зумирането в Safari при двойно докосване и при фокус върху поле -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1f2933">
+<!-- За добавяне към началния екран (iOS Safari) -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Маси">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<title>Маси — Ресторант</title>
+<style>
+  :root {
+    --bg: #11161c;
+    --panel: #1f2933;
+    --panel-2: #2a3744;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --free: #16a34a;       /* свободна — зелено */
+    --free-d: #0f7a37;
+    --waiting: #dc2626;    /* чака ястия — червено (премигва) */
+    --waiting-d: #991b1b;
+    --busy: #f59e0b;       /* заета / всичко занесено — оранжево */
+    --busy-d: #b45309;
+    --accent: #3b82f6;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior: none;
+  }
+  body {
+    padding: max(env(safe-area-inset-top), 10px) max(env(safe-area-inset-right), 10px)
+             max(env(safe-area-inset-bottom), 10px) max(env(safe-area-inset-left), 10px);
+    min-height: 100vh;
+  }
+  header.app-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 10px;
+  }
+  header.app-head h1 { font-size: 20px; margin: 0; font-weight: 700; }
+  .legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .dot.free { background: var(--free); }
+  .dot.waiting { background: var(--waiting); }
+  .dot.busy { background: var(--busy); }
+
+  .zone { margin: 14px 0; }
+  .zone h2 {
+    font-size: 14px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .5px; margin: 0 0 8px 2px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+    gap: 10px;
+  }
+  .table {
+    border: none; cursor: pointer;
+    border-radius: 14px; padding: 12px 6px;
+    color: #fff; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    min-height: 84px; justify-content: center;
+    font-family: inherit;
+    box-shadow: 0 2px 6px rgba(0,0,0,.3);
+    transition: transform .05s ease;
+  }
+  .table:active { transform: scale(.96); }
+  .table .num { font-size: 26px; font-weight: 800; line-height: 1; }
+  .table .st { font-size: 11px; opacity: .95; }
+  .table .badge {
+    font-size: 11px; background: rgba(0,0,0,.25);
+    padding: 1px 7px; border-radius: 10px; margin-top: 2px;
+  }
+  .table.free { background: linear-gradient(160deg, var(--free), var(--free-d)); }
+  .table.busy { background: linear-gradient(160deg, var(--busy), var(--busy-d)); }
+  .table.waiting {
+    background: linear-gradient(160deg, var(--waiting), var(--waiting-d));
+    animation: blink 1s ease-in-out infinite;
+  }
+  @keyframes blink {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,.0), 0 2px 6px rgba(0,0,0,.3); opacity: 1; }
+    50%      { box-shadow: 0 0 0 5px rgba(220,38,38,.55), 0 2px 6px rgba(0,0,0,.3); opacity: .85; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .table.waiting { animation: none; outline: 3px solid #fff5; }
+  }
+
+  /* ===== Панел за маса ===== */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55);
+    display: none; align-items: flex-end; justify-content: center; z-index: 50;
+  }
+  .overlay.open { display: flex; }
+  .sheet {
+    background: var(--panel); width: 100%; max-width: 560px;
+    border-radius: 18px 18px 0 0; padding: 16px;
+    padding-bottom: max(env(safe-area-inset-bottom), 16px);
+    max-height: 88vh; display: flex; flex-direction: column;
+    animation: up .18s ease;
+  }
+  @keyframes up { from { transform: translateY(30px); opacity: .6; } to { transform: none; opacity: 1; } }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .sheet-head h3 { margin: 0; font-size: 22px; }
+  .status-pill { font-size: 12px; padding: 4px 10px; border-radius: 12px; color:#fff; font-weight:600; }
+  .status-pill.free { background: var(--free); }
+  .status-pill.waiting { background: var(--waiting); }
+  .status-pill.busy { background: var(--busy); }
+  .close-btn { background: var(--panel-2); border: none; color: var(--text); font-size: 22px;
+    width: 38px; height: 38px; border-radius: 10px; line-height: 1; cursor: pointer; }
+
+  .add-row { display: flex; gap: 8px; margin: 12px 0; }
+  .add-row input {
+    flex: 1; font-size: 16px; /* >=16px спира авто-зум в iOS */
+    padding: 12px; border-radius: 10px; border: 1px solid #3a4a5a;
+    background: var(--panel-2); color: var(--text);
+  }
+  .add-row button {
+    background: var(--accent); color: #fff; border: none; border-radius: 10px;
+    font-size: 16px; font-weight: 700; padding: 0 16px; cursor: pointer;
+  }
+
+  .items { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+  .item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel-2); border-radius: 12px; padding: 12px;
+    margin-bottom: 8px;
+  }
+  .item .check {
+    width: 30px; height: 30px; border-radius: 8px; border: 2px solid var(--muted);
+    background: transparent; color: #fff; font-size: 18px; line-height: 1;
+    display: flex; align-items: center; justify-content: center; flex: 0 0 auto; cursor: pointer;
+  }
+  .item.done .check { background: var(--free); border-color: var(--free); }
+  .item .label { flex: 1; font-size: 16px; word-break: break-word; }
+  .item.done .label { text-decoration: line-through; color: var(--muted); }
+  .item .del { background: transparent; border: none; color: #f87171; font-size: 20px; cursor: pointer; padding: 4px 8px; }
+  .empty { color: var(--muted); text-align: center; padding: 18px 0; font-size: 14px; }
+
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .actions button { flex: 1; font-size: 15px; font-weight: 700; padding: 13px; border-radius: 12px; border: none; cursor: pointer; }
+  .btn-all { background: var(--busy); color: #fff; }
+  .btn-clear { background: #475569; color: #fff; }
+  .btn-all:disabled, .btn-clear:disabled { opacity: .45; cursor: default; }
+</style>
+</head>
+<body>
+  <header class="app-head">
+    <h1>🍽️ Маси</h1>
+    <div class="legend">
+      <span><i class="dot free"></i>Свободна</span>
+      <span><i class="dot waiting"></i>Чака ястия</span>
+      <span><i class="dot busy"></i>Заета</span>
+    </div>
+  </header>
+
+  <main id="zones"></main>
+
+  <!-- Панел за избрана маса -->
+  <div class="overlay" id="overlay">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-head">
+        <h3 id="sheetTitle">Маса</h3>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="status-pill" id="statusPill">Свободна</span>
+          <button class="close-btn" id="closeBtn" aria-label="Затвори">×</button>
+        </div>
+      </div>
+
+      <div class="add-row">
+        <input id="itemInput" type="text" inputmode="text" autocomplete="off"
+               placeholder="Поръчка (напр. 2x Шопска салата)" enterkeyhint="done">
+        <button id="addBtn">Добави</button>
+      </div>
+
+      <ul class="items" id="itemList"></ul>
+
+      <div class="actions">
+        <button class="btn-all" id="allBtn">✓ Занесох всичко</button>
+        <button class="btn-clear" id="clearBtn">🧹 Изчисти масата</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+  var STORAGE_KEY = "restaurant_tables_v1";
+
+  // Дефиниция на залите и масите
+  var ZONES = [
+    { id: "salon",   name: "Салон",   tables: range(1, 14) },
+    { id: "garden",  name: "Градина", tables: range(21, 28) },
+    { id: "terrace", name: "Тераса",  tables: range(31, 38) }
+  ];
+
+  function range(a, b) { var r = []; for (var i = a; i <= b; i++) r.push(i); return r; }
+
+  // ----- Състояние -----
+  // state.tables[номер] = { items: [{ text, done }] }
+  var state = load();
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return { tables: {} };
+  }
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+  function tableData(num) {
+    if (!state.tables[num]) state.tables[num] = { items: [] };
+    return state.tables[num];
+  }
+
+  // Връща статуса на маса: free | waiting | busy
+  function statusOf(num) {
+    var t = state.tables[num];
+    if (!t || !t.items || t.items.length === 0) return "free";
+    var anyUndone = t.items.some(function (it) { return !it.done; });
+    return anyUndone ? "waiting" : "busy";
+  }
+  var STATUS_TEXT = { free: "Свободна", waiting: "Чака ястия", busy: "Заета" };
+
+  // ----- Рендиране на масите -----
+  var zonesEl = document.getElementById("zones");
+
+  function renderAll() {
+    zonesEl.innerHTML = "";
+    ZONES.forEach(function (zone) {
+      var sec = document.createElement("section");
+      sec.className = "zone";
+      var h = document.createElement("h2");
+      h.textContent = zone.name;
+      sec.appendChild(h);
+      var grid = document.createElement("div");
+      grid.className = "grid";
+      zone.tables.forEach(function (num) {
+        grid.appendChild(tableTile(num));
+      });
+      sec.appendChild(grid);
+      zonesEl.appendChild(sec);
+    });
+  }
+
+  function tableTile(num) {
+    var st = statusOf(num);
+    var t = state.tables[num];
+    var btn = document.createElement("button");
+    btn.className = "table " + st;
+    btn.type = "button";
+
+    var n = document.createElement("div");
+    n.className = "num"; n.textContent = num;
+    btn.appendChild(n);
+
+    var s = document.createElement("div");
+    s.className = "st"; s.textContent = STATUS_TEXT[st];
+    btn.appendChild(s);
+
+    if (t && t.items && t.items.length) {
+      var done = t.items.filter(function (it) { return it.done; }).length;
+      var b = document.createElement("div");
+      b.className = "badge";
+      b.textContent = done + "/" + t.items.length;
+      btn.appendChild(b);
+    }
+
+    btn.addEventListener("click", function () { openSheet(num); });
+    return btn;
+  }
+
+  // ----- Панел за маса -----
+  var overlay = document.getElementById("overlay");
+  var sheetTitle = document.getElementById("sheetTitle");
+  var statusPill = document.getElementById("statusPill");
+  var itemInput = document.getElementById("itemInput");
+  var itemList = document.getElementById("itemList");
+  var addBtn = document.getElementById("addBtn");
+  var allBtn = document.getElementById("allBtn");
+  var clearBtn = document.getElementById("clearBtn");
+  var closeBtn = document.getElementById("closeBtn");
+  var current = null;
+
+  function openSheet(num) {
+    current = num;
+    renderSheet();
+    overlay.classList.add("open");
+    setTimeout(function () { itemInput.focus(); }, 150);
+  }
+  function closeSheet() {
+    overlay.classList.remove("open");
+    current = null;
+    renderAll();
+  }
+
+  function renderSheet() {
+    if (current == null) return;
+    var t = tableData(current);
+    var st = statusOf(current);
+    sheetTitle.textContent = "Маса " + current;
+    statusPill.textContent = STATUS_TEXT[st];
+    statusPill.className = "status-pill " + st;
+
+    itemList.innerHTML = "";
+    if (!t.items.length) {
+      var e = document.createElement("li");
+      e.className = "empty";
+      e.textContent = "Няма поръчки. Добави поръчка отгоре.";
+      itemList.appendChild(e);
+    } else {
+      t.items.forEach(function (it, idx) {
+        itemList.appendChild(itemRow(it, idx));
+      });
+    }
+    var hasItems = t.items.length > 0;
+    var allDone = hasItems && t.items.every(function (it) { return it.done; });
+    allBtn.disabled = !hasItems || allDone;
+    clearBtn.disabled = !hasItems;
+  }
+
+  function itemRow(it, idx) {
+    var li = document.createElement("li");
+    li.className = "item" + (it.done ? " done" : "");
+
+    var chk = document.createElement("button");
+    chk.className = "check";
+    chk.type = "button";
+    chk.textContent = it.done ? "✓" : "";
+    chk.setAttribute("aria-label", "Отметни като занесено");
+    chk.addEventListener("click", function () {
+      it.done = !it.done;
+      save(); renderSheet();
+    });
+    li.appendChild(chk);
+
+    var lab = document.createElement("span");
+    lab.className = "label";
+    lab.textContent = it.text;
+    li.appendChild(lab);
+
+    var del = document.createElement("button");
+    del.className = "del";
+    del.type = "button";
+    del.textContent = "🗑";
+    del.setAttribute("aria-label", "Изтрий");
+    del.addEventListener("click", function () {
+      tableData(current).items.splice(idx, 1);
+      save(); renderSheet();
+    });
+    li.appendChild(del);
+    return li;
+  }
+
+  function addItem() {
+    var txt = itemInput.value.trim();
+    if (!txt) return;
+    tableData(current).items.push({ text: txt, done: false });
+    itemInput.value = "";
+    save(); renderSheet();
+    itemInput.focus();
+  }
+
+  addBtn.addEventListener("click", addItem);
+  itemInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { e.preventDefault(); addItem(); }
+  });
+
+  allBtn.addEventListener("click", function () {
+    var t = tableData(current);
+    t.items.forEach(function (it) { it.done = true; });
+    save(); renderSheet();
+  });
+
+  clearBtn.addEventListener("click", function () {
+    if (!confirm("Да изчистя маса " + current + " и да я освободя?")) return;
+    state.tables[current] = { items: [] };
+    save(); renderSheet();
+  });
+
+  closeBtn.addEventListener("click", closeSheet);
+  overlay.addEventListener("click", function (e) {
+    if (e.target === overlay) closeSheet();
+  });
+
+  // ----- Старт -----
+  renderAll();
+
+  // Регистрация на service worker за офлайн работа
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    });
+  }
+})();
+</script>
+</body>
+</html>
