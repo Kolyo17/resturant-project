@@ -106,7 +106,7 @@
     background: var(--panel); width: 100%; max-width: 560px;
     border-radius: 18px 18px 0 0; padding: 16px;
     padding-bottom: max(env(safe-area-inset-bottom), 16px);
-    max-height: 88vh; display: flex; flex-direction: column;
+    max-height: 100%; display: flex; flex-direction: column;
     animation: up .18s ease;
   }
   @keyframes up { from { transform: translateY(30px); opacity: .6; } to { transform: none; opacity: 1; } }
@@ -119,7 +119,7 @@
   .close-btn { background: var(--panel-2); border: none; color: var(--text); font-size: 22px;
     width: 38px; height: 38px; border-radius: 10px; line-height: 1; cursor: pointer; }
 
-  .add-row { display: flex; gap: 8px; margin: 12px 0; }
+  .add-row { display: flex; gap: 8px; margin: 10px 0 0; flex: 0 0 auto; }
   .add-row input {
     flex: 1; font-size: 16px; /* >=16px спира авто-зум в iOS */
     padding: 12px; border-radius: 10px; border: 1px solid #3a4a5a;
@@ -130,7 +130,7 @@
     font-size: 16px; font-weight: 700; padding: 0 16px; cursor: pointer;
   }
 
-  .items { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+  .items { list-style: none; margin: 0; padding: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1 1 auto; min-height: 60px; }
   .item {
     display: flex; align-items: center; gap: 10px;
     background: var(--panel-2); border-radius: 12px; padding: 12px;
@@ -147,7 +147,7 @@
   .item .del { background: transparent; border: none; color: #f87171; font-size: 20px; cursor: pointer; padding: 4px 8px; }
   .empty { color: var(--muted); text-align: center; padding: 18px 0; font-size: 14px; }
 
-  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .actions { display: flex; gap: 8px; margin: 4px 0 10px; flex: 0 0 auto; }
   .actions button { flex: 1; font-size: 15px; font-weight: 700; padding: 13px; border-radius: 12px; border: none; cursor: pointer; }
   .btn-all { background: var(--busy); color: #fff; }
   .btn-clear { background: #475569; color: #fff; }
@@ -177,17 +177,17 @@
         </div>
       </div>
 
-      <div class="add-row">
-        <input id="itemInput" type="text" inputmode="text" autocomplete="off"
-               placeholder="Поръчка (напр. 2x Шопска салата)" enterkeyhint="done">
-        <button id="addBtn">Добави</button>
+      <div class="actions">
+        <button class="btn-all" id="allBtn">✓ Занесох всичко</button>
+        <button class="btn-clear" id="clearBtn">🧹 Изчисти масата</button>
       </div>
 
       <ul class="items" id="itemList"></ul>
 
-      <div class="actions">
-        <button class="btn-all" id="allBtn">✓ Занесох всичко</button>
-        <button class="btn-clear" id="clearBtn">🧹 Изчисти масата</button>
+      <div class="add-row">
+        <input id="itemInput" type="text" inputmode="text" autocomplete="off"
+               placeholder="Поръчка (напр. 2x Шопска салата)" enterkeyhint="done">
+        <button id="addBtn">Добави</button>
       </div>
     </div>
   </div>
@@ -298,12 +298,36 @@
     current = num;
     renderSheet();
     overlay.classList.add("open");
-    setTimeout(function () { itemInput.focus(); }, 150);
+    setTimeout(function () { fitKeyboard(); itemInput.focus(); scrollItemsBottom(); }, 150);
   }
   function closeSheet() {
     overlay.classList.remove("open");
+    resetKeyboardFit();
     current = null;
     renderAll();
+  }
+
+  // Скролва списъка най-долу (за да се вижда последно добавеното)
+  function scrollItemsBottom() {
+    itemList.scrollTop = itemList.scrollHeight;
+  }
+
+  // Свива панела точно над клавиатурата, за да остане полето за писане видимо
+  function fitKeyboard() {
+    var vv = window.visualViewport;
+    if (!vv || !overlay.classList.contains("open")) return;
+    overlay.style.top = vv.offsetTop + "px";
+    overlay.style.height = vv.height + "px";
+    overlay.style.bottom = "auto";
+  }
+  function resetKeyboardFit() {
+    overlay.style.top = "";
+    overlay.style.height = "";
+    overlay.style.bottom = "";
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", fitKeyboard);
+    window.visualViewport.addEventListener("scroll", fitKeyboard);
   }
 
   function renderSheet() {
@@ -370,8 +394,13 @@
     tableData(current).items.push({ text: txt, done: false });
     itemInput.value = "";
     save(); renderSheet();
+    scrollItemsBottom();
     itemInput.focus();
   }
+
+  itemInput.addEventListener("focus", function () {
+    setTimeout(function () { fitKeyboard(); scrollItemsBottom(); }, 100);
+  });
 
   addBtn.addEventListener("click", addItem);
   itemInput.addEventListener("keydown", function (e) {
