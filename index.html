@@ -106,9 +106,12 @@
     background: var(--panel); width: 100%; max-width: 560px;
     border-radius: 18px 18px 0 0; padding: 16px;
     padding-bottom: max(env(safe-area-inset-bottom), 16px);
-    max-height: 100%; display: flex; flex-direction: column;
+    /* буфер отгоре: панелът спира на ~110px от върха */
+    max-height: calc(100% - 110px); display: flex; flex-direction: column;
     animation: up .18s ease;
   }
+  /* при отворена клавиатура ползваме цялата налична височина */
+  .overlay.kb .sheet { max-height: 100%; }
   @keyframes up { from { transform: translateY(30px); opacity: .6; } to { transform: none; opacity: 1; } }
   .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
   .sheet-head h3 { margin: 0; font-size: 22px; }
@@ -152,6 +155,14 @@
   .btn-all { background: var(--busy); color: #fff; }
   .btn-clear { background: #475569; color: #fff; }
   .btn-all:disabled, .btn-clear:disabled { opacity: .45; cursor: default; }
+
+  /* Голям бутон за изход най-долу */
+  .btn-exit {
+    margin: 10px 0 0; flex: 0 0 auto; width: 100%;
+    background: #475569; color: #fff; border: none; border-radius: 12px;
+    padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .btn-exit:active { background: #3a475a; }
 
   /* ===== Таймер по масите ===== */
   .table .timer {
@@ -254,6 +265,8 @@
                placeholder="Ястие (напр. Шопска салата)" enterkeyhint="done">
         <button id="addBtn">Добави</button>
       </div>
+
+      <button class="btn-exit" id="exitBtn" type="button">✕ Изход от масата</button>
     </div>
   </div>
 
@@ -499,11 +512,14 @@
     overlay.style.top = vv.offsetTop + "px";
     overlay.style.height = vv.height + "px";
     overlay.style.bottom = "auto";
+    // клавиатурата е отворена, ако видимата височина е осезаемо по-малка
+    overlay.classList.toggle("kb", (window.innerHeight - vv.height) > 100);
   }
   function resetKeyboardFit() {
     overlay.style.top = "";
     overlay.style.height = "";
     overlay.style.bottom = "";
+    overlay.classList.remove("kb");
   }
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", fitKeyboard);
@@ -644,6 +660,7 @@
   });
 
   closeBtn.addEventListener("click", closeSheet);
+  document.getElementById("exitBtn").addEventListener("click", closeSheet);
   overlay.addEventListener("click", function (e) {
     if (e.target === overlay) closeSheet();
   });
