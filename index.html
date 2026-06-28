@@ -14,6 +14,9 @@
 <link rel="icon" href="icons/icon-192.png">
 <link rel="manifest" href="manifest.json">
 <title>Маси — Ресторант</title>
+<!-- Firebase (споделена база в реално време). Ако не се заредят, приложението работи локално. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
   :root {
     --bg: #11161c;
@@ -45,7 +48,7 @@
   }
   header.app-head {
     display: flex; align-items: center; justify-content: space-between;
-    gap: 8px; margin-bottom: 10px;
+    gap: 8px; margin-bottom: 8px;
   }
   header.app-head h1 { font-size: 20px; margin: 0; font-weight: 700; }
   .legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
@@ -54,6 +57,26 @@
   .dot.free { background: var(--free); }
   .dot.waiting { background: var(--waiting); }
   .dot.busy { background: var(--busy); }
+
+  /* Лента: кой съм аз + статус на връзката */
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .me-btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid #3a4a5a;
+    border-radius: 10px; padding: 9px 12px; font-size: 14px; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+  }
+  .sync { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+  /* Филтър по оператор (хоризонтално скролване) */
+  .opfilter { display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px; margin-bottom: 6px; }
+  .opfilter::-webkit-scrollbar { display: none; }
+  .opchip {
+    flex: 0 0 auto; background: var(--panel-2); color: var(--text);
+    border: 1px solid #3a4a5a; border-radius: 999px; padding: 6px 12px;
+    font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap;
+  }
+  .opchip.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
 
   .zone { margin: 14px 0; }
   .zone h2 {
@@ -73,14 +96,18 @@
     min-height: 84px; justify-content: center;
     font-family: inherit;
     box-shadow: 0 2px 6px rgba(0,0,0,.3);
-    transition: transform .05s ease;
+    transition: transform .05s ease, opacity .15s ease;
   }
   .table:active { transform: scale(.96); }
   .table .num { font-size: 26px; font-weight: 800; line-height: 1; }
   .table .st { font-size: 11px; opacity: .95; }
+  .table .op {
+    font-size: 11px; background: rgba(0,0,0,.28); padding: 1px 7px; border-radius: 8px;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .table .badge {
     font-size: 11px; background: rgba(0,0,0,.25);
-    padding: 1px 7px; border-radius: 10px; margin-top: 2px;
+    padding: 1px 7px; border-radius: 10px;
   }
   .table.free { background: linear-gradient(160deg, var(--free), var(--free-d)); }
   .table.busy { background: linear-gradient(160deg, var(--busy), var(--busy-d)); }
@@ -88,6 +115,8 @@
     background: linear-gradient(160deg, var(--waiting), var(--waiting-d));
     animation: blink 1s ease-in-out infinite;
   }
+  .table.dim { opacity: .3; }
+  .table.hl { outline: 3px solid #fff; outline-offset: -2px; }
   @keyframes blink {
     0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,.0), 0 2px 6px rgba(0,0,0,.3); opacity: 1; }
     50%      { box-shadow: 0 0 0 5px rgba(220,38,38,.55), 0 2px 6px rgba(0,0,0,.3); opacity: .85; }
@@ -121,6 +150,15 @@
   .status-pill.busy { background: var(--busy); }
   .close-btn { background: var(--panel-2); border: none; color: var(--text); font-size: 22px;
     width: 38px; height: 38px; border-radius: 10px; line-height: 1; cursor: pointer; }
+
+  /* Оператор на масата (в панела) */
+  .sheet-op { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; flex-wrap: wrap; }
+  .sheet-op.hidden { display: none; }
+  .sheet-op .op-name { font-size: 14px; color: var(--text); font-weight: 600; }
+  .btn-take {
+    background: var(--accent); color: #fff; border: none; border-radius: 9px;
+    padding: 7px 14px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
 
   .add-row { display: flex; gap: 8px; margin: 10px 0 0; flex: 0 0 auto; }
   .add-row input {
@@ -218,6 +256,16 @@
   .item .stepper button:disabled { opacity: .4; cursor: default; }
   .item .qcount { min-width: 20px; text-align: center; font-weight: 800; font-size: 17px; }
   .item.done .qcount { color: var(--muted); }
+
+  /* ===== Оператор пикер ===== */
+  .op-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+  .op-item {
+    background: var(--panel-2); color: var(--text); border: 1px solid #3a4a5a;
+    border-radius: 12px; padding: 16px; font-size: 17px; font-weight: 700;
+    cursor: pointer; font-family: inherit; text-align: left;
+  }
+  .op-item.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .op-sheet { max-height: calc(100% - 80px); }
 </style>
 </head>
 <body>
@@ -229,6 +277,12 @@
       <span><i class="dot busy"></i>Заета</span>
     </div>
   </header>
+
+  <div class="topbar">
+    <button id="meBtn" class="me-btn">👤 Аз: избери</button>
+    <span id="syncEl" class="sync">…</span>
+  </div>
+  <div class="opfilter" id="opFilter"></div>
 
   <main id="zones"></main>
 
@@ -244,6 +298,7 @@
       </div>
 
       <div class="sheet-timer hidden" id="sheetTimer"></div>
+      <div class="sheet-op hidden" id="sheetOp"></div>
 
       <div class="actions">
         <button class="btn-all" id="allBtn">✓ Занесох всичко</button>
@@ -270,10 +325,50 @@
     </div>
   </div>
 
+  <!-- Избор на оператор (кой съм аз) -->
+  <div class="overlay" id="opOverlay">
+    <div class="sheet op-sheet" role="dialog" aria-modal="true">
+      <div class="sheet-head">
+        <h3>Кой оператор си?</h3>
+        <button class="close-btn" id="opCloseBtn" aria-label="Затвори">×</button>
+      </div>
+      <div class="op-list" id="opList"></div>
+    </div>
+  </div>
+
 <script>
 (function () {
   "use strict";
   var STORAGE_KEY = "restaurant_tables_v1";
+  var OP_KEY = "operator_name_v1";
+
+  // ====== Firebase (споделена база) ======
+  var firebaseConfig = {
+    apiKey: "AIzaSyCeGVpoz0ztyX7wfbO-BxpNCqlUrmESw-Y",
+    authDomain: "restuarant-9914f.firebaseapp.com",
+    databaseURL: "https://restuarant-9914f-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "restuarant-9914f",
+    storageBucket: "restuarant-9914f.firebasestorage.app",
+    messagingSenderId: "269187387875",
+    appId: "1:269187387875:web:61b3c7cd74ba7baafcd0d6",
+    measurementId: "G-2T32KB3DNG"
+  };
+  var db = null;
+  try {
+    if (window.firebase && firebaseConfig.databaseURL) {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+    }
+  } catch (e) { db = null; }
+
+  // ====== Оператори ======
+  // Имената може да се сменят/добавят свободно.
+  var OPERATORS = [
+    "Алина", "Башак", "Нико", "Ники", "Дилек", "Айлен"
+  ];
+  var currentOperator = "";
+  try { currentOperator = localStorage.getItem(OP_KEY) || ""; } catch (e) {}
+  var filterOperator = null; // null = всички
 
   // Дефиниция на залите и масите
   var ZONES = [
@@ -285,7 +380,7 @@
   function range(a, b) { var r = []; for (var i = a; i <= b; i++) r.push(i); return r; }
 
   // ----- Състояние -----
-  // state.tables[номер] = { items: [{ text, done, qty }], orderedAt }
+  // state.tables[номер] = { items: [{ text, done, qty }], orderedAt, operator }
   var state = load();
   migrate();
 
@@ -296,21 +391,43 @@
     } catch (e) {}
     return { tables: {} };
   }
-  function save() {
+  function saveLocal() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
   }
-  // Съвместимост със стари данни: добавя orderedAt (таймер) и qty (количество)
+  // Записва промяна: локално + в облака (за конкретната маса)
+  function save() {
+    // махни празните маси от локалното състояние (без текущо отворената)
+    Object.keys(state.tables).forEach(function (k) {
+      var t = state.tables[k];
+      if ((!t || !t.items || !t.items.length) && String(k) !== String(current)) {
+        delete state.tables[k];
+      }
+    });
+    saveLocal();
+    if (current != null) persistTable(current);
+  }
+  function persistTable(num) {
+    if (!db) return;
+    var t = state.tables[num];
+    var ref = db.ref("tables/" + num);
+    if (!t || !t.items || !t.items.length) ref.remove().catch(function () {});
+    else ref.set(t).catch(function () {});
+  }
+  // Съвместимост: добавя orderedAt (таймер), qty (количество), operator
   function migrate() {
+    if (!state.tables) state.tables = {};
     Object.keys(state.tables).forEach(function (num) {
       var t = state.tables[num];
+      if (!t) { delete state.tables[num]; return; }
       if (!t.items) t.items = [];
       t.items.forEach(function (it) { if (!it.qty) it.qty = 1; });
       if (t.items.length && !t.orderedAt) t.orderedAt = Date.now();
       if (!t.items.length) t.orderedAt = null;
+      if (typeof t.operator === "undefined") t.operator = null;
     });
   }
   function tableData(num) {
-    if (!state.tables[num]) state.tables[num] = { items: [], orderedAt: null };
+    if (!state.tables[num]) state.tables[num] = { items: [], orderedAt: null, operator: null };
     return state.tables[num];
   }
 
@@ -323,7 +440,6 @@
     function p(n) { return (n < 10 ? "0" : "") + n; }
     return h > 0 ? h + ":" + p(m) + ":" + p(sec) : p(m) + ":" + p(sec);
   }
-  // Обновява всички таймери на екрана (на всяка секунда)
   function tick() {
     var now = Date.now();
     var els = document.querySelectorAll("[data-ts]");
@@ -341,6 +457,67 @@
     return anyUndone ? "waiting" : "busy";
   }
   var STATUS_TEXT = { free: "Свободна", waiting: "Чака ястия", busy: "Заета" };
+
+  // ====== Оператор: лента и пикер ======
+  var meBtn = document.getElementById("meBtn");
+  var syncEl = document.getElementById("syncEl");
+  var opFilter = document.getElementById("opFilter");
+  var opOverlay = document.getElementById("opOverlay");
+  var opList = document.getElementById("opList");
+
+  function updateMeBtn() {
+    meBtn.textContent = "👤 Аз: " + (currentOperator || "избери");
+  }
+  function setOperator(name) {
+    currentOperator = name;
+    try { localStorage.setItem(OP_KEY, name); } catch (e) {}
+    updateMeBtn();
+    renderFilter();
+  }
+  function renderFilter() {
+    opFilter.innerHTML = "";
+    opFilter.appendChild(filterChip("Всички", filterOperator === null, function () {
+      filterOperator = null; renderFilter(); renderAll();
+    }));
+    OPERATORS.forEach(function (name) {
+      opFilter.appendChild(filterChip(name, filterOperator === name, function () {
+        filterOperator = (filterOperator === name ? null : name);
+        renderFilter(); renderAll();
+      }));
+    });
+  }
+  function filterChip(text, sel, onClick) {
+    var b = document.createElement("button");
+    b.className = "opchip" + (sel ? " sel" : "");
+    b.type = "button"; b.textContent = text;
+    b.addEventListener("click", onClick);
+    return b;
+  }
+  function openOpPicker() {
+    opList.innerHTML = "";
+    OPERATORS.forEach(function (name) {
+      var b = document.createElement("button");
+      b.className = "op-item" + (name === currentOperator ? " sel" : "");
+      b.type = "button"; b.textContent = name;
+      b.addEventListener("click", function () {
+        setOperator(name);
+        opOverlay.classList.remove("open");
+        renderAll();
+        if (overlay.classList.contains("open")) renderSheet();
+      });
+      opList.appendChild(b);
+    });
+    opOverlay.classList.add("open");
+  }
+  meBtn.addEventListener("click", openOpPicker);
+  document.getElementById("opCloseBtn").addEventListener("click", function () { opOverlay.classList.remove("open"); });
+  opOverlay.addEventListener("click", function (e) { if (e.target === opOverlay) opOverlay.classList.remove("open"); });
+
+  function updateSync() {
+    if (!db) { syncEl.textContent = "📴 Само на този телефон"; return; }
+    syncEl.textContent = connected ? "🟢 На живо" : "🔴 Свързване…";
+  }
+  var connected = false;
 
   // ----- Рендиране на масите -----
   var zonesEl = document.getElementById("zones");
@@ -374,6 +551,7 @@
         if (statusOf(num) === "waiting") {
           var t = state.tables[num];
           waiting.push({ num: num, zone: zone.name, ts: t.orderedAt || 0,
+            operator: t.operator || "",
             pending: t.items.filter(function (it) { return !it.done; }).length });
         }
       });
@@ -403,7 +581,9 @@
       title.textContent = "Маса " + w.num + " · " + w.zone;
       var sub = document.createElement("div");
       sub.className = "qsub";
-      sub.textContent = (w.pending === 1 ? "1 ястие" : w.pending + " ястия") + " за носене";
+      var subTxt = (w.pending === 1 ? "1 ястие" : w.pending + " ястия") + " за носене";
+      if (w.operator) subTxt += " · 👤 " + w.operator;
+      sub.textContent = subTxt;
       main.appendChild(title); main.appendChild(sub);
       row.appendChild(main);
 
@@ -434,6 +614,12 @@
     s.className = "st"; s.textContent = STATUS_TEXT[st];
     btn.appendChild(s);
 
+    if (st !== "free" && t && t.operator) {
+      var op = document.createElement("div");
+      op.className = "op"; op.textContent = "👤 " + t.operator;
+      btn.appendChild(op);
+    }
+
     if (st !== "free" && t && t.orderedAt) {
       var tm = document.createElement("div");
       tm.className = "timer";
@@ -450,6 +636,12 @@
       btn.appendChild(b);
     }
 
+    // Подсветка/затъмняване при филтър по оператор
+    if (filterOperator) {
+      if (t && t.operator === filterOperator) btn.classList.add("hl");
+      else btn.classList.add("dim");
+    }
+
     btn.addEventListener("click", function () { openSheet(num); });
     return btn;
   }
@@ -458,6 +650,7 @@
   var overlay = document.getElementById("overlay");
   var sheetTitle = document.getElementById("sheetTitle");
   var statusPill = document.getElementById("statusPill");
+  var sheetOp = document.getElementById("sheetOp");
   var itemInput = document.getElementById("itemInput");
   var itemList = document.getElementById("itemList");
   var addBtn = document.getElementById("addBtn");
@@ -469,7 +662,6 @@
   var current = null;
   var selQty = 1; // избрано количество за следващото ястие (1–4)
 
-  // Бутони за количество (1× 2× 3× 4×)
   qtyRow.addEventListener("click", function (e) {
     var b = e.target.closest(".qty-btn");
     if (!b) return;
@@ -500,19 +692,16 @@
     renderAll();
   }
 
-  // Скролва списъка най-долу (за да се вижда последно добавеното)
   function scrollItemsBottom() {
     itemList.scrollTop = itemList.scrollHeight;
   }
 
-  // Свива панела точно над клавиатурата, за да остане полето за писане видимо
   function fitKeyboard() {
     var vv = window.visualViewport;
     if (!vv || !overlay.classList.contains("open")) return;
     overlay.style.top = vv.offsetTop + "px";
     overlay.style.height = vv.height + "px";
     overlay.style.bottom = "auto";
-    // клавиатурата е отворена, ако видимата височина е осезаемо по-малка
     overlay.classList.toggle("kb", (window.innerHeight - vv.height) > 100);
   }
   function resetKeyboardFit() {
@@ -543,6 +732,8 @@
       sheetTimer.innerHTML = "";
     }
 
+    renderSheetOp(t, st);
+
     var keepScroll = itemList.scrollTop;
     itemList.innerHTML = "";
     if (!t.items.length) {
@@ -560,6 +751,27 @@
     var allDone = hasItems && t.items.every(function (it) { return it.done; });
     allBtn.disabled = !hasItems || allDone;
     clearBtn.disabled = !hasItems;
+  }
+
+  // Ред "оператор" в панела
+  function renderSheetOp(t, st) {
+    if (st === "free") { sheetOp.classList.add("hidden"); sheetOp.innerHTML = ""; return; }
+    sheetOp.classList.remove("hidden");
+    sheetOp.innerHTML = "";
+    var label = document.createElement("span");
+    label.className = "op-name";
+    label.textContent = "👤 Оператор: " + (t.operator || "никой");
+    sheetOp.appendChild(label);
+    if (t.operator !== currentOperator) {
+      var take = document.createElement("button");
+      take.className = "btn-take"; take.type = "button"; take.textContent = "Поеми масата";
+      take.addEventListener("click", function () {
+        if (!currentOperator) { openOpPicker(); return; }
+        tableData(current).operator = currentOperator;
+        save(); renderSheet();
+      });
+      sheetOp.appendChild(take);
+    }
   }
 
   function itemRow(it, idx) {
@@ -630,6 +842,7 @@
     if (!txt) return;
     var t = tableData(current);
     if (!t.orderedAt) t.orderedAt = Date.now(); // старт на таймера при първата поръчка
+    if (!t.operator && currentOperator) t.operator = currentOperator; // авто-поемане
     t.items.push({ text: txt, done: false, qty: selQty });
     itemInput.value = "";
     selQty = 1; setQtyButtons();
@@ -655,7 +868,7 @@
 
   clearBtn.addEventListener("click", function () {
     if (!confirm("Да изчистя маса " + current + " и да я освободя?")) return;
-    state.tables[current] = { items: [], orderedAt: null };
+    state.tables[current] = { items: [], orderedAt: null, operator: null };
     save(); renderSheet();
   });
 
@@ -665,10 +878,44 @@
     if (e.target === overlay) closeSheet();
   });
 
+  // ====== Жива синхронизация с облака ======
+  function startSync() {
+    if (!db) return;
+    db.ref(".info/connected").on("value", function (s) {
+      connected = (s.val() === true);
+      updateSync();
+    });
+    db.ref("tables").on("value", function (snap) {
+      var remote = snap.val();
+      if (remote == null) {
+        // облакът е празен — качи наличните локални маси веднъж
+        var keys = Object.keys(state.tables);
+        var any = keys.some(function (k) { var t = state.tables[k]; return t && t.items && t.items.length; });
+        if (any) {
+          keys.forEach(function (k) {
+            var t = state.tables[k];
+            if (t && t.items && t.items.length) db.ref("tables/" + k).set(t).catch(function () {});
+          });
+        }
+        return;
+      }
+      state.tables = remote;
+      migrate();
+      saveLocal();
+      renderAll();
+      if (overlay.classList.contains("open")) renderSheet();
+    });
+  }
+
   // ----- Старт -----
+  updateMeBtn();
+  renderFilter();
+  updateSync();
   setQtyButtons();
   renderAll();
-  setInterval(tick, 1000); // таймерите се обновяват на всяка секунда
+  startSync();
+  setInterval(tick, 1000);
+  if (!currentOperator) openOpPicker(); // при първо отваряне — избери кой си
 
   // Регистрация на service worker за офлайн работа + авто-обновяване
   if ("serviceWorker" in navigator) {
@@ -676,11 +923,11 @@
     navigator.serviceWorker.addEventListener("controllerchange", function () {
       if (refreshing) return;
       refreshing = true;
-      window.location.reload(); // зарежда новата версия автоматично
+      window.location.reload();
     });
     window.addEventListener("load", function () {
       navigator.serviceWorker.register("sw.js").then(function (reg) {
-        reg.update(); // проверява за нова версия при всяко отваряне
+        reg.update();
       }).catch(function () {});
     });
   }
