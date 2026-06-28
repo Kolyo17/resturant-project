@@ -195,8 +195,18 @@
     font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit;
   }
   .qty-btn.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .item .qnum { font-weight: 800; color: #fbbf24; margin-right: 4px; }
-  .item.done .qnum { color: var(--muted); }
+  /* Стъпер за порции: −  брой  + */
+  .item .stepper { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+  .item .stepper button {
+    width: 34px; height: 34px; border-radius: 9px; border: none;
+    font-size: 22px; font-weight: 800; line-height: 1; cursor: pointer; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-family: inherit;
+  }
+  .item .minus { background: var(--waiting); }   /* червен */
+  .item .plus  { background: var(--free); }       /* зелен */
+  .item .stepper button:disabled { opacity: .4; cursor: default; }
+  .item .qcount { min-width: 20px; text-align: center; font-weight: 800; font-size: 17px; }
+  .item.done .qcount { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -517,17 +527,19 @@
       sheetTimer.innerHTML = "";
     }
 
+    var keepScroll = itemList.scrollTop;
     itemList.innerHTML = "";
     if (!t.items.length) {
       var e = document.createElement("li");
       e.className = "empty";
-      e.textContent = "Няма поръчки. Добави поръчка отгоре.";
+      e.textContent = "Няма поръчки. Добави поръчка отдолу.";
       itemList.appendChild(e);
     } else {
       t.items.forEach(function (it, idx) {
         itemList.appendChild(itemRow(it, idx));
       });
     }
+    itemList.scrollTop = keepScroll;
     var hasItems = t.items.length > 0;
     var allDone = hasItems && t.items.every(function (it) { return it.done; });
     allBtn.disabled = !hasItems || allDone;
@@ -551,14 +563,38 @@
 
     var lab = document.createElement("span");
     lab.className = "label";
-    if (it.qty > 1) {
-      var qn = document.createElement("span");
-      qn.className = "qnum";
-      qn.textContent = it.qty + "×";
-      lab.appendChild(qn);
-    }
-    lab.appendChild(document.createTextNode(it.text));
+    lab.textContent = it.text;
     li.appendChild(lab);
+
+    // Стъпер за порции: − (червено) брой + (зелено)
+    var stp = document.createElement("div");
+    stp.className = "stepper";
+
+    var minus = document.createElement("button");
+    minus.className = "minus"; minus.type = "button"; minus.textContent = "−";
+    minus.setAttribute("aria-label", "Махни порция");
+    minus.addEventListener("click", function () {
+      var items = tableData(current).items;
+      if (it.qty > 1) it.qty -= 1;
+      else items.splice(idx, 1); // последната порция → маха реда
+      save(); renderSheet();
+    });
+    stp.appendChild(minus);
+
+    var cnt = document.createElement("span");
+    cnt.className = "qcount"; cnt.textContent = it.qty;
+    stp.appendChild(cnt);
+
+    var plus = document.createElement("button");
+    plus.className = "plus"; plus.type = "button"; plus.textContent = "+";
+    plus.setAttribute("aria-label", "Добави порция");
+    plus.disabled = it.qty >= 4;
+    plus.addEventListener("click", function () {
+      if (it.qty < 4) { it.qty += 1; save(); renderSheet(); }
+    });
+    stp.appendChild(plus);
+
+    li.appendChild(stp);
 
     var del = document.createElement("button");
     del.className = "del";
