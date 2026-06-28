@@ -420,6 +420,11 @@
       var t = state.tables[num];
       if (!t) { delete state.tables[num]; return; }
       if (!t.items) t.items = [];
+      // Firebase понякога връща масив като обект — връщаме го към масив
+      if (!Array.isArray(t.items)) {
+        t.items = Object.keys(t.items).map(function (k) { return t.items[k]; })
+          .filter(function (it) { return it != null; });
+      }
       t.items.forEach(function (it) { if (!it.qty) it.qty = 1; });
       if (t.items.length && !t.orderedAt) t.orderedAt = Date.now();
       if (!t.items.length) t.orderedAt = null;
@@ -879,6 +884,7 @@
   });
 
   // ====== Жива синхронизация с облака ======
+  var didInitialSync = false;
   function startSync() {
     if (!db) return;
     db.ref(".info/connected").on("value", function (s) {
@@ -887,19 +893,26 @@
     });
     db.ref("tables").on("value", function (snap) {
       var remote = snap.val();
-      if (remote == null) {
-        // облакът е празен — качи наличните локални маси веднъж
-        var keys = Object.keys(state.tables);
-        var any = keys.some(function (k) { var t = state.tables[k]; return t && t.items && t.items.length; });
-        if (any) {
-          keys.forEach(function (k) {
-            var t = state.tables[k];
-            if (t && t.items && t.items.length) db.ref("tables/" + k).set(t).catch(function () {});
-          });
+
+      // САМО при първото зареждане: ако облакът е празен, а на този телефон
+      // има стари маси — качи ги веднъж (първоначална миграция).
+      if (!didInitialSync) {
+        didInitialSync = true;
+        if (remote == null) {
+          var keys = Object.keys(state.tables);
+          var any = keys.some(function (k) { var t = state.tables[k]; return t && t.items && t.items.length; });
+          if (any) {
+            keys.forEach(function (k) {
+              var t = state.tables[k];
+              if (t && t.items && t.items.length) db.ref("tables/" + k).set(t).catch(function () {});
+            });
+            return; // изчакваме следващото събитие, което ще донесе данните
+          }
         }
-        return;
       }
-      state.tables = remote;
+
+      // Облакът е истината. Празно значи „всичко е изчистено" — НЕ връщаме нищо.
+      state.tables = remote || {};
       migrate();
       saveLocal();
       renderAll();
