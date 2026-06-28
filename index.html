@@ -617,10 +617,18 @@
   renderAll();
   setInterval(tick, 1000); // таймерите се обновяват на всяка секунда
 
-  // Регистрация на service worker за офлайн работа
+  // Регистрация на service worker за офлайн работа + авто-обновяване
   if ("serviceWorker" in navigator) {
+    var refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function () {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload(); // зарежда новата версия автоматично
+    });
     window.addEventListener("load", function () {
-      navigator.serviceWorker.register("sw.js").catch(function () {});
+      navigator.serviceWorker.register("sw.js").then(function (reg) {
+        reg.update(); // проверява за нова версия при всяко отваряне
+      }).catch(function () {});
     });
   }
 })();

@@ -1,6 +1,8 @@
 /* Service worker — кешира приложението за офлайн работа.
-   Данните за масите се пазят в localStorage (отделно), не тук. */
-var CACHE = "masi-v1";
+   ВАЖНО: index.html се взима "мрежа първо" (network-first), за да се
+   показва веднага новата версия, когато има интернет. Иконите и т.н.
+   се взимат "кеш първо" за бързина. Данните за масите са в localStorage. */
+var CACHE = "masi-v2";
 var ASSETS = [
   "./",
   "./index.html",
@@ -27,19 +29,38 @@ self.addEventListener("activate", function (e) {
   );
 });
 
+// Дали заявката е за HTML страницата (навигация)
+function isHTML(req) {
+  return req.mode === "navigate" ||
+    (req.headers.get("accept") || "").indexOf("text/html") !== -1;
+}
+
 self.addEventListener("fetch", function (e) {
-  if (e.request.method !== "GET") return;
-  e.respondWith(
-    caches.match(e.request).then(function (cached) {
-      if (cached) return cached;
-      return fetch(e.request).then(function (resp) {
+  var req = e.request;
+  if (req.method !== "GET") return;
+
+  if (isHTML(req)) {
+    // Мрежа първо: винаги пробва да вземе новата версия онлайн
+    e.respondWith(
+      fetch(req).then(function (resp) {
         var copy = resp.clone();
-        caches.open(CACHE).then(function (c) {
-          try { c.put(e.request, copy); } catch (err) {}
-        });
+        caches.open(CACHE).then(function (c) { try { c.put("./index.html", copy); } catch (err) {} });
         return resp;
       }).catch(function () {
-        return caches.match("./index.html");
+        return caches.match("./index.html").then(function (m) { return m || caches.match("./"); });
+      })
+    );
+    return;
+  }
+
+  // Останалото (икони, manifest): кеш първо, после мрежа
+  e.respondWith(
+    caches.match(req).then(function (cached) {
+      if (cached) return cached;
+      return fetch(req).then(function (resp) {
+        var copy = resp.clone();
+        caches.open(CACHE).then(function (c) { try { c.put(req, copy); } catch (err) {} });
+        return resp;
       });
     })
   );
