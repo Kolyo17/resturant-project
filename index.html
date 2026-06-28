@@ -152,6 +152,51 @@
   .btn-all { background: var(--busy); color: #fff; }
   .btn-clear { background: #475569; color: #fff; }
   .btn-all:disabled, .btn-clear:disabled { opacity: .45; cursor: default; }
+
+  /* ===== Таймер по масите ===== */
+  .table .timer {
+    font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+    background: rgba(0,0,0,.22); padding: 1px 7px; border-radius: 8px;
+  }
+
+  /* ===== Ред за кухнята ===== */
+  .queue { margin: 12px 0 4px; background: var(--panel); border-radius: 14px; padding: 10px 10px 4px; }
+  .queue h2 {
+    font-size: 14px; margin: 0 0 8px 2px; color: #fbbf24;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .qrow {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    text-align: left; border: none; cursor: pointer; font-family: inherit;
+    background: var(--panel-2); color: var(--text);
+    border-radius: 10px; padding: 10px; margin-bottom: 6px;
+  }
+  .qrow .pos {
+    background: var(--waiting); color: #fff; font-weight: 800;
+    min-width: 26px; height: 26px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; flex: 0 0 auto;
+  }
+  .qrow .qmain { flex: 1; min-width: 0; }
+  .qrow .qtitle { font-size: 16px; font-weight: 700; }
+  .qrow .qsub { font-size: 12px; color: var(--muted); }
+  .qrow .timer { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 17px; color: #fca5a5; flex: 0 0 auto; }
+
+  /* ===== Таймер в панела ===== */
+  .sheet-timer { font-size: 14px; color: var(--muted); margin: 0 0 8px; font-variant-numeric: tabular-nums; }
+  .sheet-timer b { color: var(--text); font-size: 16px; }
+  .sheet-timer.hidden { display: none; }
+
+  /* ===== Брояч за количество ===== */
+  .qty-row { display: flex; gap: 6px; align-items: center; margin: 8px 0 0; flex: 0 0 auto; }
+  .qty-label { font-size: 12px; color: var(--muted); margin-right: 2px; flex: 0 0 auto; }
+  .qty-btn {
+    flex: 1; background: var(--panel-2); color: var(--text);
+    border: 1px solid #3a4a5a; border-radius: 10px; padding: 9px 0;
+    font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .qty-btn.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .item .qnum { font-weight: 800; color: #fbbf24; margin-right: 4px; }
+  .item.done .qnum { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -177,6 +222,8 @@
         </div>
       </div>
 
+      <div class="sheet-timer hidden" id="sheetTimer"></div>
+
       <div class="actions">
         <button class="btn-all" id="allBtn">✓ Занесох всичко</button>
         <button class="btn-clear" id="clearBtn">🧹 Изчисти масата</button>
@@ -184,9 +231,17 @@
 
       <ul class="items" id="itemList"></ul>
 
+      <div class="qty-row" id="qtyRow">
+        <span class="qty-label">Брой:</span>
+        <button class="qty-btn sel" type="button" data-qty="1">1×</button>
+        <button class="qty-btn" type="button" data-qty="2">2×</button>
+        <button class="qty-btn" type="button" data-qty="3">3×</button>
+        <button class="qty-btn" type="button" data-qty="4">4×</button>
+      </div>
+
       <div class="add-row">
         <input id="itemInput" type="text" inputmode="text" autocomplete="off"
-               placeholder="Поръчка (напр. 2x Шопска салата)" enterkeyhint="done">
+               placeholder="Ястие (напр. Шопска салата)" enterkeyhint="done">
         <button id="addBtn">Добави</button>
       </div>
     </div>
@@ -207,8 +262,9 @@
   function range(a, b) { var r = []; for (var i = a; i <= b; i++) r.push(i); return r; }
 
   // ----- Състояние -----
-  // state.tables[номер] = { items: [{ text, done }] }
+  // state.tables[номер] = { items: [{ text, done, qty }], orderedAt }
   var state = load();
+  migrate();
 
   function load() {
     try {
@@ -220,9 +276,38 @@
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
   }
+  // Съвместимост със стари данни: добавя orderedAt (таймер) и qty (количество)
+  function migrate() {
+    Object.keys(state.tables).forEach(function (num) {
+      var t = state.tables[num];
+      if (!t.items) t.items = [];
+      t.items.forEach(function (it) { if (!it.qty) it.qty = 1; });
+      if (t.items.length && !t.orderedAt) t.orderedAt = Date.now();
+      if (!t.items.length) t.orderedAt = null;
+    });
+  }
   function tableData(num) {
-    if (!state.tables[num]) state.tables[num] = { items: [] };
+    if (!state.tables[num]) state.tables[num] = { items: [], orderedAt: null };
     return state.tables[num];
+  }
+
+  // Форматира изминало време като MM:SS (или H:MM:SS над час)
+  function fmt(ms) {
+    if (ms < 0) ms = 0;
+    var s = Math.floor(ms / 1000);
+    var h = Math.floor(s / 3600); s -= h * 3600;
+    var m = Math.floor(s / 60); var sec = s - m * 60;
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return h > 0 ? h + ":" + p(m) + ":" + p(sec) : p(m) + ":" + p(sec);
+  }
+  // Обновява всички таймери на екрана (на всяка секунда)
+  function tick() {
+    var now = Date.now();
+    var els = document.querySelectorAll("[data-ts]");
+    for (var i = 0; i < els.length; i++) {
+      var ts = parseInt(els[i].getAttribute("data-ts"), 10);
+      if (ts) els[i].textContent = fmt(now - ts);
+    }
   }
 
   // Връща статуса на маса: free | waiting | busy
@@ -239,6 +324,8 @@
 
   function renderAll() {
     zonesEl.innerHTML = "";
+    var q = renderQueue();
+    if (q) zonesEl.appendChild(q);
     ZONES.forEach(function (zone) {
       var sec = document.createElement("section");
       sec.className = "zone";
@@ -253,6 +340,60 @@
       sec.appendChild(grid);
       zonesEl.appendChild(sec);
     });
+    tick();
+  }
+
+  // Ред за кухнята: чакащите маси, подредени по време на поръчка (най-старите горе)
+  function renderQueue() {
+    var waiting = [];
+    ZONES.forEach(function (zone) {
+      zone.tables.forEach(function (num) {
+        if (statusOf(num) === "waiting") {
+          var t = state.tables[num];
+          waiting.push({ num: num, zone: zone.name, ts: t.orderedAt || 0,
+            pending: t.items.filter(function (it) { return !it.done; }).length });
+        }
+      });
+    });
+    if (!waiting.length) return null;
+    waiting.sort(function (a, b) { return a.ts - b.ts; });
+
+    var sec = document.createElement("section");
+    sec.className = "queue";
+    var h = document.createElement("h2");
+    h.textContent = "🍳 Ред за кухнята";
+    sec.appendChild(h);
+
+    waiting.forEach(function (w, i) {
+      var row = document.createElement("button");
+      row.className = "qrow";
+      row.type = "button";
+
+      var pos = document.createElement("span");
+      pos.className = "pos"; pos.textContent = (i + 1);
+      row.appendChild(pos);
+
+      var main = document.createElement("div");
+      main.className = "qmain";
+      var title = document.createElement("div");
+      title.className = "qtitle";
+      title.textContent = "Маса " + w.num + " · " + w.zone;
+      var sub = document.createElement("div");
+      sub.className = "qsub";
+      sub.textContent = (w.pending === 1 ? "1 ястие" : w.pending + " ястия") + " за носене";
+      main.appendChild(title); main.appendChild(sub);
+      row.appendChild(main);
+
+      var tm = document.createElement("span");
+      tm.className = "timer";
+      tm.setAttribute("data-ts", w.ts);
+      tm.textContent = fmt(Date.now() - w.ts);
+      row.appendChild(tm);
+
+      row.addEventListener("click", function () { openSheet(w.num); });
+      sec.appendChild(row);
+    });
+    return sec;
   }
 
   function tableTile(num) {
@@ -269,6 +410,14 @@
     var s = document.createElement("div");
     s.className = "st"; s.textContent = STATUS_TEXT[st];
     btn.appendChild(s);
+
+    if (st !== "free" && t && t.orderedAt) {
+      var tm = document.createElement("div");
+      tm.className = "timer";
+      tm.setAttribute("data-ts", t.orderedAt);
+      tm.textContent = fmt(Date.now() - t.orderedAt);
+      btn.appendChild(tm);
+    }
 
     if (t && t.items && t.items.length) {
       var done = t.items.filter(function (it) { return it.done; }).length;
@@ -292,10 +441,31 @@
   var allBtn = document.getElementById("allBtn");
   var clearBtn = document.getElementById("clearBtn");
   var closeBtn = document.getElementById("closeBtn");
+  var sheetTimer = document.getElementById("sheetTimer");
+  var qtyRow = document.getElementById("qtyRow");
   var current = null;
+  var selQty = 1; // избрано количество за следващото ястие (1–4)
+
+  // Бутони за количество (1× 2× 3× 4×)
+  qtyRow.addEventListener("click", function (e) {
+    var b = e.target.closest(".qty-btn");
+    if (!b) return;
+    selQty = parseInt(b.getAttribute("data-qty"), 10) || 1;
+    setQtyButtons();
+    itemInput.focus();
+  });
+  function setQtyButtons() {
+    var btns = qtyRow.querySelectorAll(".qty-btn");
+    for (var i = 0; i < btns.length; i++) {
+      var q = parseInt(btns[i].getAttribute("data-qty"), 10);
+      btns[i].classList.toggle("sel", q === selQty);
+    }
+  }
 
   function openSheet(num) {
     current = num;
+    selQty = 1;
+    setQtyButtons();
     renderSheet();
     overlay.classList.add("open");
     setTimeout(function () { fitKeyboard(); itemInput.focus(); scrollItemsBottom(); }, 150);
@@ -338,6 +508,15 @@
     statusPill.textContent = STATUS_TEXT[st];
     statusPill.className = "status-pill " + st;
 
+    if (st !== "free" && t.orderedAt) {
+      sheetTimer.classList.remove("hidden");
+      sheetTimer.innerHTML = "⏱️ Чака от <b data-ts=\"" + t.orderedAt + "\">" +
+        fmt(Date.now() - t.orderedAt) + "</b>";
+    } else {
+      sheetTimer.classList.add("hidden");
+      sheetTimer.innerHTML = "";
+    }
+
     itemList.innerHTML = "";
     if (!t.items.length) {
       var e = document.createElement("li");
@@ -372,7 +551,13 @@
 
     var lab = document.createElement("span");
     lab.className = "label";
-    lab.textContent = it.text;
+    if (it.qty > 1) {
+      var qn = document.createElement("span");
+      qn.className = "qnum";
+      qn.textContent = it.qty + "×";
+      lab.appendChild(qn);
+    }
+    lab.appendChild(document.createTextNode(it.text));
     li.appendChild(lab);
 
     var del = document.createElement("button");
@@ -391,8 +576,11 @@
   function addItem() {
     var txt = itemInput.value.trim();
     if (!txt) return;
-    tableData(current).items.push({ text: txt, done: false });
+    var t = tableData(current);
+    if (!t.orderedAt) t.orderedAt = Date.now(); // старт на таймера при първата поръчка
+    t.items.push({ text: txt, done: false, qty: selQty });
     itemInput.value = "";
+    selQty = 1; setQtyButtons();
     save(); renderSheet();
     scrollItemsBottom();
     itemInput.focus();
@@ -415,7 +603,7 @@
 
   clearBtn.addEventListener("click", function () {
     if (!confirm("Да изчистя маса " + current + " и да я освободя?")) return;
-    state.tables[current] = { items: [] };
+    state.tables[current] = { items: [], orderedAt: null };
     save(); renderSheet();
   });
 
@@ -425,7 +613,9 @@
   });
 
   // ----- Старт -----
+  setQtyButtons();
   renderAll();
+  setInterval(tick, 1000); // таймерите се обновяват на всяка секунда
 
   // Регистрация на service worker за офлайн работа
   if ("serviceWorker" in navigator) {
