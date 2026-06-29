@@ -821,9 +821,8 @@
     var plus = document.createElement("button");
     plus.className = "plus"; plus.type = "button"; plus.textContent = "+";
     plus.setAttribute("aria-label", "Добави порция");
-    plus.disabled = it.qty >= 4;
     plus.addEventListener("click", function () {
-      if (it.qty < 4) { it.qty += 1; save(); renderSheet(); }
+      it.qty += 1; save(); renderSheet();
     });
     stp.appendChild(plus);
 
