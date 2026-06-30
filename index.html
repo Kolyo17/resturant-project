@@ -83,11 +83,9 @@
     font-size: 14px; color: var(--muted); text-transform: uppercase;
     letter-spacing: .5px; margin: 0 0 8px 2px;
   }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
-    gap: 10px;
-  }
+  /* Колони по зали — подравнени долу, като физическия план */
+  .cols { display: flex; gap: 10px; align-items: flex-end; justify-content: center; }
+  .col { display: flex; flex-direction: column; gap: 10px; flex: 1 1 0; max-width: 165px; }
   .table {
     border: none; cursor: pointer;
     border-radius: 14px; padding: 12px 6px;
@@ -371,14 +369,20 @@
   try { currentOperator = localStorage.getItem(OP_KEY) || ""; } catch (e) {}
   var filterOperator = null; // null = всички
 
-  // Дефиниция на залите и масите
+  // Подредба по зали и колони (като физическия план; най-малкият номер е долу,
+  // затова колоните са изброени отгоре-надолу с по-голямото число най-горе)
   var ZONES = [
-    { id: "salon",   name: "Салон",   tables: range(1, 14) },
-    { id: "garden",  name: "Градина", tables: range(21, 28) },
-    { id: "terrace", name: "Тераса",  tables: range(31, 38) }
+    { name: "Салон",   columns: [ [6,5,4,3,2,1], [10,9,8,7], [14,13,12,11] ] },
+    { name: "Градина", columns: [ [24,23,22,21], [28,27,26,25] ] },
+    { name: "Тераса",  columns: [ [34,33,32,31], [38,37,36,35] ] }
   ];
 
-  function range(a, b) { var r = []; for (var i = a; i <= b; i++) r.push(i); return r; }
+  // Връща всички номера на маси в дадена зала (изравнен списък)
+  function zoneTables(zone) {
+    var all = [];
+    zone.columns.forEach(function (c) { c.forEach(function (n) { all.push(n); }); });
+    return all;
+  }
 
   // ----- Състояние -----
   // state.tables[номер] = { items: [{ text, done, qty }], orderedAt, operator }
@@ -538,12 +542,15 @@
       var h = document.createElement("h2");
       h.textContent = zone.name;
       sec.appendChild(h);
-      var grid = document.createElement("div");
-      grid.className = "grid";
-      zone.tables.forEach(function (num) {
-        grid.appendChild(tableTile(num));
+      var cols = document.createElement("div");
+      cols.className = "cols";
+      zone.columns.forEach(function (colNums) {
+        var col = document.createElement("div");
+        col.className = "col";
+        colNums.forEach(function (num) { col.appendChild(tableTile(num)); });
+        cols.appendChild(col);
       });
-      sec.appendChild(grid);
+      sec.appendChild(cols);
       zonesEl.appendChild(sec);
     });
     tick();
@@ -553,7 +560,7 @@
   function renderQueue() {
     var waiting = [];
     ZONES.forEach(function (zone) {
-      zone.tables.forEach(function (num) {
+      zoneTables(zone).forEach(function (num) {
         if (statusOf(num) === "waiting") {
           var t = state.tables[num];
           waiting.push({ num: num, zone: zone.name, ts: t.orderedAt || 0,
